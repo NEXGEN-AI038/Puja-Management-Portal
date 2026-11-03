@@ -28,7 +28,14 @@ export async function sendInvite(committeeId: string, email: string, role: strin
   if (ctx && typeof ctx.json === 'function' && ctx.status !== 404) {
     try {
       const body = await ctx.json();
-      return { ok: false, error: body?.message || 'Could not send the invitation.' };
+      const msg: string = body?.message || 'Could not send the invitation.';
+      if (/sending .*email|rate limit|not authorized|smtp/i.test(msg)) {
+        return {
+          ok: false,
+          error: `The invitation was saved, but the email could not be sent (${msg}). Supabase's built-in email service only delivers to your own team members and is heavily rate-limited — connect a custom SMTP sender in Supabase (Project Settings → Authentication → SMTP Settings), then press "Invite admin" again to re-send.`,
+        };
+      }
+      return { ok: false, error: msg };
     } catch { /* fall through to the fallback */ }
   }
 

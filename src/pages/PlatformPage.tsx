@@ -96,7 +96,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
   const [state, setState] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -114,7 +114,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
     if (error) { setBusy(false); setError(error.message); return; }
     const res = await sendInvite(newId as string, adminEmail, 'Committee Admin');
     setBusy(false);
-    setNotice(res.ok ? res.message : `Committee created, but the invitation email failed: ${res.error}`);
+    setNotice({ ok: res.ok, text: res.ok ? res.message : `Committee created. ${res.error}` });
     setName(''); setAdminEmail(''); setCity(''); setState(''); setShowForm(false);
     load();
   };
@@ -123,7 +123,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
     const email = window.prompt('Email of the new Committee Admin?');
     if (!email || !email.includes('@')) return;
     const res = await sendInvite(committeeId, email, 'Committee Admin');
-    setNotice(res.ok ? res.message : res.error);
+    setNotice({ ok: res.ok, text: res.ok ? res.message : res.error });
     load();
   };
 
@@ -163,7 +163,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
       </div>
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {notice && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</div>}
+      {notice && <div className={`rounded-lg p-3 text-sm ${notice.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{notice.text}</div>}
 
       {showForm && (
         <Card>
