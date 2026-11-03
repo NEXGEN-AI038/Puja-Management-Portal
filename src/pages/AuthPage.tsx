@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { APP_URL, initialAuthLinkError } from '@/lib/supabase';
 import { LoginCarousel } from '@/components/LoginCarousel';
 import { Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
 
@@ -15,7 +16,9 @@ export function AuthPage() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(
+    initialAuthLinkError ? `${initialAuthLinkError}. Use "Forgot password?" to get a fresh link, or ask your administrator to re-send your invitation.` : ''
+  );
   const [info, setInfo] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,26 +35,34 @@ export function AuthPage() {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName } },
+          options: { data: { full_name: fullName }, emailRedirectTo: APP_URL },
         });
         if (error) throw error;
-        if (data.user) {
-          await supabase.from('profiles').upsert({
-            id: data.user.id,
-            full_name: fullName,
-          });
+        if (data.session && data.user) {
+          await supabase.from('profiles').upsert({ id: data.user.id, full_name: fullName });
           setInfo('Account created. You are now signed in.');
           await refreshProfile();
           await refreshCommittees();
+        } else if (data.user) {
+          // Email confirmation is on: no session yet. The profile is created automatically at first sign-in.
+          setInfo('Account created. Check your email and click the confirmation link, then come back here and sign in.');
+          setMode('signin');
+          setPassword('');
         }
       } else if (mode === 'forgot') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: APP_URL });
         if (error) throw error;
         setInfo('Password reset link sent to your email.');
         setMode('signin');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred. Please try again.');
+      if (mode === 'signin' && /invalid login credentials/i.test(err.message || '')) {
+        setError('Incorrect email or password. If you were invited and have not created a password yet, use the link in your invitation email, or choose "Sign up" with the same email address you were invited on.');
+      } else if (/email not confirmed/i.test(err.message || '')) {
+        setError('Please confirm your email first — click the link in the confirmation email we sent you.');
+      } else {
+        setError(err.message || 'An error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

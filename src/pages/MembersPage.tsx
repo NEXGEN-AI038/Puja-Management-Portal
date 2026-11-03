@@ -11,6 +11,7 @@ import { LoadingOverlay, EmptyState } from '@/components/ui/Feedback';
 import { UserPlus, Mail, Phone, MoreVertical } from 'lucide-react';
 import type { CommitteeMember, Profile, Role } from '@/types';
 import { ROLES } from '@/types';
+import { sendInvite } from '@/lib/invite';
 
 const ROLE_COLORS: Record<Role, 'gold' | 'green' | 'blue' | 'amber' | 'gray' | 'teal'> = {
   'Platform Owner': 'gold',
@@ -168,18 +169,12 @@ function InviteModal({ open, onClose, committeeId, onInvited }: {
     const clean = email.trim().toLowerCase();
     if (!clean || !clean.includes('@')) { setError('Enter a valid email address'); return; }
     setError(''); setInfo(''); setLoading(true);
-    try {
-      const { error } = await supabase.from('invitations').insert({ committee_id: committeeId, email: clean, role });
-      if (error) {
-        if (error.code === '23505') setError('This email already has a pending invitation.');
-        else throw error;
-        return;
-      }
-      setInfo(`Invitation saved. Ask ${clean} to sign up or sign in with this exact email — access is granted automatically.`);
-      setEmail('');
-      onInvited();
-    } catch (err: any) { setError(err.message); }
-    finally { setLoading(false); }
+    const res = await sendInvite(committeeId, clean, role);
+    setLoading(false);
+    if (!res.ok) { setError(res.error); return; }
+    setInfo(res.message);
+    setEmail('');
+    onInvited();
   };
 
   return (

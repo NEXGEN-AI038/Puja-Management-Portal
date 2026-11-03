@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, initialAuthLinkType, initialAuthLinkError } from '@/lib/supabase';
 import type { Profile, CommitteeWithMembership } from '@/types';
 
 interface AuthContextValue {
@@ -9,6 +9,8 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   isPlatformAdmin: boolean;
+  passwordSetup: 'invite' | 'recovery' | null;
+  completePasswordSetup: () => void;
   committees: CommitteeWithMembership[];
   activeCommittee: CommitteeWithMembership | null;
   setActiveCommittee: (c: CommitteeWithMembership | null) => void;
@@ -27,6 +29,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeCommittee, setActiveCommittee] = useState<CommitteeWithMembership | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  // Set when the person arrived from an invite or password-reset email: they must choose a password.
+  const [passwordSetup, setPasswordSetup] = useState<'invite' | 'recovery' | null>(
+    !initialAuthLinkError && (initialAuthLinkType === 'invite' || initialAuthLinkType === 'recovery') ? initialAuthLinkType : null
+  );
+  const completePasswordSetup = useCallback(() => setPasswordSetup(null), []);
 
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
@@ -106,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordSetup('recovery');
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -137,6 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         loading,
         isPlatformAdmin,
+        passwordSetup,
+        completePasswordSetup,
         committees,
         activeCommittee,
         setActiveCommittee,

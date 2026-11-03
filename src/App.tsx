@@ -3,6 +3,7 @@ import { useRouter } from '@/lib/router';
 import { LoadingOverlay } from '@/components/ui/Feedback';
 import { AppLayout } from '@/components/AppLayout';
 import { AuthPage } from '@/pages/AuthPage';
+import { SetPasswordPage } from '@/pages/SetPasswordPage';
 import { NoAccessPage } from '@/pages/NoAccessPage';
 import { PlatformPage } from '@/pages/PlatformPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -47,10 +48,11 @@ function Routes() {
 }
 
 function AppContent() {
-  const { user, loading, committees, isPlatformAdmin } = useAuth();
+  const { user, loading, committees, isPlatformAdmin, passwordSetup } = useAuth();
   const { route } = useRouter();
 
   if (loading) return <LoadingOverlay message="Loading..." />;
+  if (user && passwordSetup) return <SetPasswordPage />;
   if (!user) return <AuthPage />;
   if (isPlatformAdmin && (committees.length === 0)) {
     return <PlatformPage standalone />;

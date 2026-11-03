@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { sendInvite } from '@/lib/invite';
 import { LoadingOverlay } from '@/components/ui/Feedback';
 import { ShieldCheck, Plus, RefreshCw, Building2, Users, CalendarDays, MailPlus, CreditCard, Search } from 'lucide-react';
 
@@ -95,6 +96,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
   const [state, setState] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -108,9 +110,11 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
     setError('');
     if (!name.trim() || !adminEmail.includes('@')) { setError('Committee name and a valid admin email are required'); return; }
     setBusy(true);
-    const { error } = await supabase.rpc('create_committee', { p_name: name.trim(), p_admin_email: adminEmail.trim(), p_city: city || null, p_state: state || null });
+    const { data: newId, error } = await supabase.rpc('create_committee', { p_name: name.trim(), p_admin_email: adminEmail.trim(), p_city: city || null, p_state: state || null });
+    if (error) { setBusy(false); setError(error.message); return; }
+    const res = await sendInvite(newId as string, adminEmail, 'Committee Admin');
     setBusy(false);
-    if (error) { setError(error.message); return; }
+    setNotice(res.ok ? res.message : `Committee created, but the invitation email failed: ${res.error}`);
     setName(''); setAdminEmail(''); setCity(''); setState(''); setShowForm(false);
     load();
   };
@@ -118,8 +122,8 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
   const inviteAdmin = async (committeeId: string) => {
     const email = window.prompt('Email of the new Committee Admin?');
     if (!email || !email.includes('@')) return;
-    const { error } = await supabase.from('invitations').insert({ committee_id: committeeId, email: email.trim().toLowerCase(), role: 'Committee Admin' });
-    if (error) window.alert(error.code === '23505' ? 'Already invited.' : error.message);
+    const res = await sendInvite(committeeId, email, 'Committee Admin');
+    setNotice(res.ok ? res.message : res.error);
     load();
   };
 
@@ -159,6 +163,7 @@ export function PlatformPage({ standalone = false }: { standalone?: boolean }) {
       </div>
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {notice && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</div>}
 
       {showForm && (
         <Card>
