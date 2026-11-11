@@ -405,7 +405,9 @@ function AddFinanceModal({ open, onClose, eventId, onAdded }: { open: boolean; o
         event_id: eventId, type, category: category.trim(),
         description: description || null, amount: parseFloat(amount), date,
         payment_method: paymentMethod, reference_no: referenceNo.trim() || null,
-        party_name: partyName.trim() || null, flat_no: flatNo.trim() || null, tower_phase: towerPhase.trim() || null,
+        party_name: partyName.trim() || null,
+        flat_no: type === 'income' ? flatNo.trim() || null : null,
+        tower_phase: type === 'income' ? towerPhase.trim() || null : null,
       });
       if (error) throw error;
       setCategory(''); setDescription(''); setAmount(''); setReferenceNo(''); setPaymentMethod('cash'); setPartyName(''); setFlatNo(''); setTowerPhase('');
@@ -436,10 +438,12 @@ function AddFinanceModal({ open, onClose, eventId, onAdded }: { open: boolean; o
           <Input label="Reference / UTR / cheque no." value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Optional" />
         </div>
         <Input label={type === 'income' ? 'Name (received from)' : 'Name (paid to)'} value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="Full name" />
-        <div className="grid grid-cols-2 gap-4">
-          <Input label="Flat no." value={flatNo} onChange={(e) => setFlatNo(e.target.value)} placeholder="e.g. 304" />
-          <Input label="Tower no. / Phase" value={towerPhase} onChange={(e) => setTowerPhase(e.target.value)} placeholder="e.g. Tower B / Phase 2" />
-        </div>
+        {type === 'income' && (
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Flat no." value={flatNo} onChange={(e) => setFlatNo(e.target.value)} placeholder="e.g. 304" />
+            <Input label="Tower no. / Phase" value={towerPhase} onChange={(e) => setTowerPhase(e.target.value)} placeholder="e.g. Tower B / Phase 2" />
+          </div>
+        )}
       </div>
     </Modal>
   );

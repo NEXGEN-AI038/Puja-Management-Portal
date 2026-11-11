@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import { useAuth } from '@/contexts/AuthContext';
 import { canCreateEvent } from '@/lib/permissions';
 import { useRouter } from '@/lib/router';
@@ -6,13 +7,36 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/Input';
 import { LoadingOverlay, EmptyState } from '@/components/ui/Feedback';
 import {
   CalendarDays, Wallet, TrendingUp, TrendingDown, CheckSquare,
-  ArrowRight, Plus, MapPin, Clock,
+  ArrowRight, Plus, MapPin, Clock, Building2,
 } from 'lucide-react';
 import type { EventItem, EventTask, EventFinance } from '@/types';
 import { EVENT_STATUSES } from '@/types';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const inr = (n: number) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+// PostgREST returns at most 1000 rows per request, so read in pages to keep totals correct.
+async function fetchAllFinance(eventIds: string[]): Promise<EventFinance[]> {
+  const out: EventFinance[] = [];
+  if (eventIds.length === 0) return out;
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase
+      .from('event_finance')
+      .select('id,event_id,type,category,description,amount,date,status')
+      .in('event_id', eventIds)
+      .order('date', { ascending: false })
+      .order('id')
+      .range(from, from + 999);
+    if (!data) break;
+    out.push(...(data as unknown as EventFinance[]));
+    if (data.length < 1000) break;
+  }
+  return out;
+}
 
 export function DashboardPage() {
   const { activeCommittee } = useAuth();
@@ -21,6 +45,8 @@ export function DashboardPage() {
   const [tasks, setTasks] = useState<EventTask[]>([]);
   const [finance, setFinance] = useState<EventFinance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()));
+  const yearChosen = useRef(false);
 
   const loadData = useCallback(async () => {
     if (!activeCommittee) {
@@ -28,35 +54,80 @@ export function DashboardPage() {
       return;
     }
     setLoading(true);
-    const [eventsRes, tasksRes, financeRes] = await Promise.all([
-      supabase
-        .from('events')
-        .select('*')
-        .eq('committee_id', activeCommittee.id)
-        .order('start_date', { ascending: true }),
-      supabase
-        .from('event_tasks')
-        .select('*, event:events(id, name)')
-        .in('event_id', (await supabase.from('events').select('id').eq('committee_id', activeCommittee.id)).data?.map((e: any) => e.id) || [])
-        .order('due_date', { ascending: true })
-        .limit(10),
-      supabase
-        .from('event_finance')
-        .select('*, event:events(id, name)')
-        .in('event_id', (await supabase.from('events').select('id').eq('committee_id', activeCommittee.id)).data?.map((e: any) => e.id) || [])
-        .order('date', { ascending: false })
-        .limit(10),
+    const { data: ev } = await supabase
+      .from('events')
+      .select('*')
+      .eq('committee_id', activeCommittee.id)
+      .order('start_date', { ascending: true });
+    const evList = (ev as EventItem[]) || [];
+    const ids = evList.map((e) => e.id);
+
+    const [tasksRes, fin] = await Promise.all([
+      ids.length
+        ? supabase.from('event_tasks').select('*, event:events(id, name)').in('event_id', ids).order('due_date', { ascending: true }).limit(10)
+        : Promise.resolve({ data: [] as any[] }),
+      fetchAllFinance(ids),
     ]);
 
-    setEvents((eventsRes.data as EventItem[]) || []);
+    setEvents(evList);
     setTasks((tasksRes.data as any[]) || []);
-    setFinance((financeRes.data as any[]) || []);
+    setFinance(fin.filter((f) => f.status !== 'void'));
     setLoading(false);
   }, [activeCommittee]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const eventName = useMemo(() => new Map(events.map((e) => [e.id, e.name])), [events]);
+
+  // Years that actually have data (plus the current year), newest first.
+  const years = useMemo(() => {
+    const set = new Set<string>([String(new Date().getFullYear())]);
+    events.forEach((e) => set.add(e.start_date.slice(0, 4)));
+    finance.forEach((f) => set.add(f.date.slice(0, 4)));
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [events, finance]);
+
+  // On first load, if this year is empty but earlier years have data, open on the latest year with data.
+  useEffect(() => {
+    if (yearChosen.current || loading) return;
+    const cur = String(new Date().getFullYear());
+    const has = (y: string) => events.some((e) => e.start_date.startsWith(y)) || finance.some((f) => f.date.startsWith(y));
+    if (!has(cur)) {
+      const latest = years.find(has);
+      if (latest) setYear(latest);
+    }
+    yearChosen.current = true;
+  }, [loading, events, finance, years]);
+
+  const inYear = (d: string) => year === 'all' || d.startsWith(year);
+  const yearEvents = useMemo(() => events.filter((e) => inYear(e.start_date)), [events, year]);
+  const yearFinance = useMemo(() => finance.filter((f) => inYear(f.date)), [finance, year]);
+
+  const chartData = useMemo(() => {
+    if (year === 'all') {
+      return [...years].reverse().map((y) => ({
+        name: y,
+        Income: finance.filter((f) => f.type === 'income' && f.date.startsWith(y)).reduce((s, f) => s + Number(f.amount), 0),
+        Expense: finance.filter((f) => f.type === 'expense' && f.date.startsWith(y)).reduce((s, f) => s + Number(f.amount), 0),
+      }));
+    }
+    return MONTHS.map((m, i) => {
+      const prefix = `${year}-${String(i + 1).padStart(2, '0')}`;
+      return {
+        name: m,
+        Income: yearFinance.filter((f) => f.type === 'income' && f.date.startsWith(prefix)).reduce((s, f) => s + Number(f.amount), 0),
+        Expense: yearFinance.filter((f) => f.type === 'expense' && f.date.startsWith(prefix)).reduce((s, f) => s + Number(f.amount), 0),
+      };
+    });
+  }, [year, years, finance, yearFinance]);
+
+  const expenseByCategory = useMemo(() => {
+    const m = new Map<string, number>();
+    yearFinance.filter((f) => f.type === 'expense').forEach((f) => m.set(f.category, (m.get(f.category) || 0) + Number(f.amount)));
+    return [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
+  }, [yearFinance]);
 
   if (loading) return <LoadingOverlay message="Loading dashboard..." />;
 
@@ -73,9 +144,12 @@ export function DashboardPage() {
   const now = new Date();
   const upcoming = events.filter((e) => new Date(e.start_date) >= now && e.status !== 'cancelled' && e.status !== 'completed').slice(0, 5);
   const pendingTasks = tasks.filter((t) => t.status === 'pending' || t.status === 'in_progress');
-  const totalIncome = finance.filter((f) => f.type === 'income').reduce((sum, f) => sum + Number(f.amount), 0);
-  const totalExpense = finance.filter((f) => f.type === 'expense').reduce((sum, f) => sum + Number(f.amount), 0);
+  const totalIncome = yearFinance.filter((f) => f.type === 'income').reduce((sum, f) => sum + Number(f.amount), 0);
+  const totalExpense = yearFinance.filter((f) => f.type === 'expense').reduce((sum, f) => sum + Number(f.amount), 0);
   const balance = totalIncome - totalExpense;
+  const recent = yearFinance.slice(0, 5);
+  const periodLabel = year === 'all' ? 'All years' : year;
+  const maxCat = expenseByCategory[0]?.value || 1;
 
   const statusInfo = (status: string) => EVENT_STATUSES.find((s) => s.value === status);
 
@@ -85,13 +159,19 @@ export function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-serif font-semibold text-stone-800">{activeCommittee.name}</h1>
-          <p className="text-sm text-stone-500 mt-0.5">Dashboard overview</p>
+          <p className="text-sm text-stone-500 mt-0.5">Dashboard overview · {periodLabel}</p>
         </div>
-        {canCreateEvent(activeCommittee.role) && (
-          <Button onClick={() => navigate('/events')}>
-            <Plus className="h-4 w-4" /> New Event
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <Select aria-label="Year" value={year} onChange={(e) => { yearChosen.current = true; setYear(e.target.value); }}>
+            <option value="all">All years</option>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </Select>
+          {canCreateEvent(activeCommittee.role) && (
+            <Button onClick={() => navigate('/events')}>
+              <Plus className="h-4 w-4" /> New Event
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -101,9 +181,9 @@ export function DashboardPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
               <CalendarDays className="h-5 w-5 text-blue-600" />
             </div>
-            <span className="text-xs text-stone-400">Total</span>
+            <span className="text-xs text-stone-400">{periodLabel}</span>
           </div>
-          <p className="text-2xl font-semibold text-stone-800">{events.length}</p>
+          <p className="text-2xl font-semibold text-stone-800">{yearEvents.length}</p>
           <p className="text-xs text-stone-500 mt-1">Events</p>
         </Card>
 
@@ -112,7 +192,7 @@ export function DashboardPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50">
               <TrendingUp className="h-5 w-5 text-green-600" />
             </div>
-            <span className="text-xs text-stone-400">Collections</span>
+            <span className="text-xs text-stone-400">{periodLabel}</span>
           </div>
           <p className="text-2xl font-semibold text-stone-800">₹{totalIncome.toLocaleString('en-IN')}</p>
           <p className="text-xs text-stone-500 mt-1">Total income</p>
@@ -123,7 +203,7 @@ export function DashboardPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50">
               <TrendingDown className="h-5 w-5 text-red-600" />
             </div>
-            <span className="text-xs text-stone-400">Expenses</span>
+            <span className="text-xs text-stone-400">{periodLabel}</span>
           </div>
           <p className="text-2xl font-semibold text-stone-800">₹{totalExpense.toLocaleString('en-IN')}</p>
           <p className="text-xs text-stone-500 mt-1">Total spent</p>
@@ -141,7 +221,43 @@ export function DashboardPage() {
           <p className={`text-2xl font-semibold ${balance >= 0 ? 'text-stone-800' : 'text-red-600'}`}>
             ₹{Math.abs(balance).toLocaleString('en-IN')}
           </p>
-          <p className="text-xs text-stone-500 mt-1">Current balance</p>
+          <p className="text-xs text-stone-500 mt-1">Balance for {periodLabel}</p>
+        </Card>
+      </div>
+
+      {/* Year-wise income & expense */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card padding="md" className="lg:col-span-2">
+          <h3 className="text-base font-semibold text-stone-800">{year === 'all' ? 'Income & expenses by year' : `Income & expenses by month — ${year}`}</h3>
+          <div className="mt-3 h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : v)} />
+                <Tooltip formatter={(v) => inr(Number(v))} />
+                <Legend />
+                <Bar dataKey="Income" fill="#1f6b4f" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Expense" fill="#b8963e" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+        <Card padding="md">
+          <h3 className="text-base font-semibold text-stone-800">Where the money went</h3>
+          <p className="text-xs text-stone-400">Expenses by category · {periodLabel}</p>
+          {expenseByCategory.length === 0 ? (
+            <p className="py-10 text-center text-sm text-stone-400">No expenses recorded</p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {expenseByCategory.map((c) => (
+                <li key={c.name}>
+                  <div className="flex justify-between text-sm"><span className="truncate text-stone-700">{c.name}</span><span className="font-medium text-stone-800">{inr(c.value)}</span></div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-gold-500" style={{ width: `${(c.value / maxCat) * 100}%` }} /></div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
@@ -235,17 +351,17 @@ export function DashboardPage() {
       {/* Recent finance activity */}
       <Card padding="none">
         <div className="p-5 border-b border-stone-200">
-          <h3 className="text-base font-semibold text-stone-800">Recent Finance Activity</h3>
+          <h3 className="text-base font-semibold text-stone-800">Recent Finance Activity · {periodLabel}</h3>
         </div>
-        {finance.length === 0 ? (
+        {recent.length === 0 ? (
           <EmptyState
             icon={<Wallet className="h-10 w-10" />}
-            title="No finance records yet"
+            title={`No finance records for ${periodLabel}`}
             description="Add income or expenses from an event's finance module."
           />
         ) : (
           <div className="divide-y divide-stone-100">
-            {finance.slice(0, 5).map((f) => (
+            {recent.map((f) => (
               <div key={f.id} className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
@@ -256,7 +372,7 @@ export function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium text-stone-700">{f.category}</p>
                     <p className="text-xs text-stone-400">
-                      {(f as any).event?.name} · {new Date(f.date).toLocaleDateString('en-IN')}
+                      {eventName.get(f.event_id) || '—'} · {new Date(f.date).toLocaleDateString('en-IN')}
                     </p>
                   </div>
                 </div>
@@ -272,4 +388,3 @@ export function DashboardPage() {
   );
 }
 
-import { Building2 } from 'lucide-react';

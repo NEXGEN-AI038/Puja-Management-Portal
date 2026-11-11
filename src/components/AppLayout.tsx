@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import {
   LayoutDashboard, CalendarDays, Users, Wallet, Truck,
   Clock, CheckSquare, Settings, LogOut, Menu, X, ChevronDown,
-  Building2, Bell, Search, ShieldCheck,
+  Building2, Bell, Search, ShieldCheck, Landmark,
 } from 'lucide-react';
 
 interface NavItem {
@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, route: '/', match: (r) => r.name === 'dashboard' },
   { label: 'Events', icon: CalendarDays, route: '/events', match: (r) => r.name === 'events' || r.name === 'event' },
   { label: 'Members', icon: Users, route: '/members', match: (r) => r.name === 'members' },
+  { label: 'Core Committee', icon: Landmark, route: '/committee', match: (r) => r.name === 'committee' },
   { label: 'Finance', icon: Wallet, route: '/finance', match: (r) => r.name === 'finance' },
   { label: 'Vendors', icon: Truck, route: '/vendors', match: (r) => r.name === 'vendors' },
   { label: 'Schedule', icon: Clock, route: '/schedule', match: (r) => r.name === 'schedule' },
@@ -30,7 +31,7 @@ const navItems: NavItem[] = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const { profile, committees, activeCommittee, setActiveCommittee, signOut, isPlatformAdmin } = useAuth();
   const baseNav = activeCommittee?.role === 'Community Member'
-    ? navItems.filter((n) => ['Dashboard', 'Events', 'Finance', 'Schedule'].includes(n.label))
+    ? navItems.filter((n) => ['Dashboard', 'Events', 'Finance', 'Schedule', 'Core Committee'].includes(n.label))
     : navItems;
   const allNav: NavItem[] = isPlatformAdmin
     ? [...baseNav, { label: 'Platform admin', icon: ShieldCheck, route: '/platform', match: (r) => r.name === 'platform' }]

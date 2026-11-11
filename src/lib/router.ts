@@ -5,6 +5,7 @@ export type Route =
   | { name: 'events' }
   | { name: 'event'; id: string; tab?: string }
   | { name: 'members' }
+  | { name: 'committee' }
   | { name: 'finance' }
   | { name: 'vendors' }
   | { name: 'schedule' }
@@ -20,6 +21,7 @@ function parseHash(): Route {
   if (parts[0] === 'events' && parts.length === 1) return { name: 'events' };
   if (parts[0] === 'event' && parts[1]) return { name: 'event', id: parts[1], tab: parts[2] };
   if (parts[0] === 'members') return { name: 'members' };
+  if (parts[0] === 'committee') return { name: 'committee' };
   if (parts[0] === 'finance') return { name: 'finance' };
   if (parts[0] === 'vendors') return { name: 'vendors' };
   if (parts[0] === 'schedule') return { name: 'schedule' };

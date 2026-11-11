@@ -10,6 +10,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { EventsListPage } from '@/pages/EventsListPage';
 import { EventDetailPage } from '@/pages/EventDetailPage';
 import { MembersPage } from '@/pages/MembersPage';
+import { CoreCommitteePage } from '@/pages/CoreCommitteePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { FinancePage, VendorsPage, SchedulePage, TasksPage } from '@/pages/CommitteePages';
 import { SetupPage } from '@/pages/SetupPage';
@@ -30,6 +31,8 @@ function Routes() {
       return <EventDetailPage key={route.id} eventId={route.id} tab={route.tab} />;
     case 'members':
       return <MembersPage />;
+    case 'committee':
+      return <CoreCommitteePage />;
     case 'finance':
       return <FinancePage />;
     case 'vendors':
